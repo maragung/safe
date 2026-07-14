@@ -72,7 +72,6 @@ export const OP_TYPES = {
 // Local storage keys
 export const STORAGE_KEYS = {
   network: 'octra-safe:network',
-  wallet: 'octra-safe:wallet',          // encrypted wallet blob
   tokens: 'octra-safe:custom-tokens',
   safes: 'octra-safe:known-safes',      // locally cached Safe addresses owned by user
 } as const

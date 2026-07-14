@@ -22,7 +22,7 @@ import type { SafeInfo } from '@/types'
 export function DashboardPage() {
   const navigate = useNavigate()
   const network = useNetwork()
-  const { address, isUnlocked, balance, refresh } = useWallet()
+  const { address, isConnected, balance, refresh } = useWallet()
   const knownSafes = useAppStore((s) => s.knownSafes)
   const [safes, setSafes] = useState<SafeInfo[]>([])
   const [loading, setLoading] = useState(false)
@@ -78,14 +78,14 @@ export function DashboardPage() {
     loadSafes()
   }, [address, knownSafes.join(','), network.rpcUrl])
 
-  if (!isUnlocked || !address) {
+  if (!isConnected || !address) {
     return (
       <div className="max-w-2xl mx-auto pt-8">
         <EmptyState
           icon={<WalletIcon className="h-8 w-8" />}
-          title="Connect your wallet"
-          description="Octra Safe uses ed25519 keys (not MetaMask). Create a new wallet or import an existing one to get started."
-          action={<Button onClick={() => setShowWalletModal(true)}>Connect Wallet</Button>}
+          title="Connect 0xio wallet"
+          description="Octra Safe uses the 0xio browser extension for wallet management. Connect your 0xio wallet to manage Safes on Octra."
+          action={<Button onClick={() => setShowWalletModal(true)}>Connect 0xio Wallet</Button>}
         />
         <AccountModal isOpen={showWalletModal} onClose={() => setShowWalletModal(false)} />
       </div>
@@ -119,7 +119,7 @@ export function DashboardPage() {
             <p className="text-xs uppercase text-text-muted">Wallet Balance</p>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-2xl font-mono font-bold text-text-primary">
-                {balance !== null ? balance.toFixed(4) : '...'}
+                {balance ? balance.public.toFixed(4) : '...'}
               </span>
               <span className="text-sm text-text-muted">OCT</span>
             </div>

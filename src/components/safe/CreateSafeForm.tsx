@@ -23,9 +23,8 @@ import { useWallet } from '@/hooks/useWallet'
 import { useNetwork } from '@/stores/useAppStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { compileAmlMulti, computeContractAddress, waitForTransaction } from '@/lib/rpc'
-import { buildDeployTx, encodeCallMessage } from '@/lib/encoder'
 import { OCTRA_SAFE_SOURCE, IOCS01_INTERFACE_SOURCE } from '@/lib/contractSources'
-import { isValidOctraAddress } from '@/lib/signer'
+import { isValidOctraAddress } from '@/lib/zerozio'  // 0xio SDK provides isValidAddress
 import { classNames, sleep } from '@/utils/helpers'
 
 interface OwnerEntry {
@@ -44,7 +43,7 @@ const DEPLOY_STEPS = [
 export function CreateSafeForm() {
   const navigate = useNavigate()
   const network = useNetwork()
-  const { address, nonce, sendTx, refresh } = useWallet()
+  const { address, isConnected, deployContract, refresh } = useWallet()
   const addKnownSafe = useAppStore((s) => s.addKnownSafe)
 
   const [owners, setOwners] = useState<OwnerEntry[]>([
@@ -87,13 +86,13 @@ export function CreateSafeForm() {
   const duplicateOwners = validOwners.length !== new Set(validOwners.map((o) => o.address)).size
   const includesZero = owners.some((o) => o.address && !isValidOctraAddress(o.address))
   const thresholdValid = threshold >= 1 && threshold <= validOwners.length
-  const canSubmit = validOwners.length >= 1 && !duplicateOwners && !includesZero && thresholdValid && !!address
+  const canSubmit = validOwners.length >= 1 && !duplicateOwners && !includesZero && thresholdValid && !!address && isConnected
 
   const ownerAddresses = validOwners.map((o) => o.address)
 
   const handleDeploy = async () => {
-    if (!address || nonce === null) {
-      toast.error('Wallet not ready')
+    if (!address || !isConnected) {
+      toast.error('Wallet not connected')
       return
     }
 
@@ -117,43 +116,46 @@ export function CreateSafeForm() {
       if (!compileResult.bytecode) throw new Error('Compile failed: no bytecode returned')
 
       // Step 2: Compute deterministic contract address
+      // (0xio extension handles nonce internally, but we still need to predict
+      //  the address to display to the user. We use the current pending nonce
+      //  from the RPC; the actual deploy will use whatever nonce the extension
+      //  picks, which should be pending_nonce + 1.)
       setDeployStep(1)
-      const nextNonce = (nonce ?? 0) + 1
+      // We don't have direct access to the extension's nonce counter, so we
+      // pass undefined and let computeContractAddress use the current nonce.
       const addrResult = await computeContractAddress(
         network.rpcUrl,
         compileResult.bytecode,
         address,
-        nextNonce
       )
       if (!addrResult.address) throw new Error('Failed to compute contract address')
 
-      // Step 3: Build & sign deploy tx
+      // Step 3-4: Build & sign deploy tx via 0xio extension
+      // The extension will:
+      //   - Show an approval popup
+      //   - Sign with the user's ed25519 private key (which we never see)
+      //   - Submit via octra_submit RPC
+      //   - Return the tx hash
       setDeployStep(2)
-      const tx = buildDeployTx({
-        from: address,
-        contractAddress: addrResult.address,
+      const result = await deployContract({
         bytecodeB64: compileResult.bytecode,
-        constructorArgs: [threshold], // OctraSafe constructor takes (threshold_val: int)
-        nonce: nextNonce,
-        ou: '1000000', // ~1 OCT cap (was 50M, lowered)
+        contractAddress: addrResult.address,
+        constructorArgs: [threshold],  // OctraSafe constructor takes (threshold_val: int)
+        ou: '1000000',                 // ~1 OCT cap
       })
-
-      // Step 4: Submit
-      setDeployStep(3)
-      const { txHash: hash } = await sendTx(tx)
-      setTxHash(hash)
+      setTxHash(result.txHash)
 
       // Step 5: Wait for confirmation
       setDeployStep(4)
-      const result = await waitForTransaction(network.rpcUrl, hash)
-      if (result.status !== 'confirmed') {
-        throw new Error(`Transaction ${result.status}`)
+      const confirmedTx = await waitForTransaction(network.rpcUrl, result.txHash)
+      if (confirmedTx.status !== 'confirmed') {
+        throw new Error(`Transaction ${confirmedTx.status}`)
       }
 
       // Cache the Safe address locally for fast dashboard load
       addKnownSafe(addrResult.address)
 
-      // Refresh wallet balance/nonce
+      // Refresh wallet balance
       refresh().catch(() => {})
 
       // Brief pause for indexing

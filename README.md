@@ -2,16 +2,24 @@
 
 A multi-signature wallet application for the **Octra blockchain**, similar to [safe.global](https://safe.global) but with the core feature set required for secure multi-sig management of OCT and OCS-01 tokens.
 
-## ⚠️ Important: Octra is NOT EVM-compatible
+## ⚠️ Important: Wallet Connect pakai 0xio wallet
+
+Octra Safe sekarang **HANYA** menggunakan **0xio wallet** browser extension untuk connect, signing, dan transaction submission. Tidak ada lagi in-browser ed25519 key management.
+
+**Install 0xio wallet**: https://chromewebstore.google.com/detail/0xio-wallet/anknhjilldkeelailocijnfibefmepcc
+
+**Kenapa 0xio?**
+- 🔒 **Non-custodial** — private key tidak pernah leave extension
+- 🌐 **Octra-native** — mainnet + devnet support built-in
+- 🔐 **FHE support** — pOCT (encrypted balance) & stealth transfers
+- 🛡️ **Audited SDK** — open-source di https://github.com/0xio-xyz/0xio-sdk
 
 Octra uses:
 - **AML (AppliedML)** smart contract language (NOT Solidity)
-- **ed25519 signatures** (NOT secp256k1 used by MetaMask)
-- **base58 `oct...` addresses** (NOT `0x...` hex)
-- **JSON-RPC 2.0** with custom `octra_*`, `contract_*` methods (NOT `eth_*`)
+- **ed25519 signatures** (handled by 0xio extension internally)
+- **base58 `oct...` addresses** (47 chars)
+- **JSON-RPC 2.0** with custom `octra_*`, `contract_*` methods
 - **Plain JSON arrays** for contract args (NOT Solidity ABI encoding)
-
-Because of these differences, **MetaMask cannot be used to sign Octra transactions**. Octra Safe ships with a built-in browser-based ed25519 wallet (keys generated/imported in-browser, encrypted with AES-GCM in localStorage — exactly the same security model as the official [octra-labs/webcli](https://github.com/octra-labs/webcli)).
 
 ## Tech Stack
 
@@ -19,8 +27,8 @@ Because of these differences, **MetaMask cannot be used to sign Octra transactio
 - **Tailwind CSS** for styling (dark theme)
 - **zustand** for state management
 - **react-router-dom** for routing
-- **tweetnacl** for ed25519 signing
-- **bip39 + ed25519-hd-key** for HD wallet derivation
+- **@0xio/sdk** for 0xio wallet integration
+- **vite-plugin-node-polyfills** for Node.js globals (Buffer, process)
 - **sonner** for toast notifications
 - **lucide-react** for icons
 
@@ -232,15 +240,19 @@ The app defaults to **Devnet**. Use the network switcher in the header to toggle
 
 ## Key Implementation Notes
 
-### Why no MetaMask?
-Octra uses ed25519 signatures, not secp256k1. MetaMask and other EVM wallets cannot sign Octra transactions. We use `tweetnacl-js` for ed25519 signing in the browser.
+### Why 0xio wallet exclusively?
+Octra uses ed25519 signatures (not secp256k1 used by MetaMask). The 0xio wallet is a browser extension that handles ed25519 key management, transaction signing, and RPC submission internally. The dApp never sees the user's private key — all signing happens inside the extension's isolated background context.
+
+Install: https://chromewebstore.google.com/detail/0xio-wallet/anknhjilldkeelailocijnfibefmepcc
+Docs: https://docs.0xio.xyz/
+SDK source: https://github.com/0xio-xyz/0xio-sdk
 
 ### Octra Transaction Format
-Transactions are signed over a canonical JSON string with strict field order:
+Transactions are signed over a canonical JSON string with strict field order (handled automatically by the 0xio extension):
 ```
 from, to_, amount, nonce, ou, timestamp, op_type, [encrypted_data,] [message,]
 ```
-The signed payload is submitted via `octra_submit` JSON-RPC method.
+The 0xio extension builds the canonical JSON, signs with the user's ed25519 private key, and submits via `octra_submit` JSON-RPC method. The dApp never touches the private key.
 
 ### Contract Calls (vs Solidity ABI)
 Octra does NOT use Solidity ABI encoding. Function arguments are passed as a plain JSON array of strings:

@@ -14,9 +14,8 @@ import { useWallet } from '@/hooks/useWallet'
 import { useNetwork } from '@/stores/useAppStore'
 import { contractCall } from '@/lib/rpc'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx } from '@/lib/encoder'
 import { encodeSafeNativeTransferTx } from '@/lib/ocs01'
-import { isValidOctraAddress } from '@/lib/signer'
+import { isValidOctraAddress } from '@/lib/zerozio'
 import { parseOctAmount, formatOctAmount } from '@/lib/ocs01'
 import { decodeInt } from '@/lib/encoder'
 
@@ -32,7 +31,7 @@ type Stage = 'idle' | 'confirming' | 'signing' | 'submitting' | 'waiting' | 'don
 
 export function SendNativeForm({ safeAddress, safeBalance, threshold, onSubmitted, onCancel }: SendNativeFormProps) {
   const network = useNetwork()
-  const { address, nonce, sendAndWaitTx, refresh } = useWallet()
+  const { address, isConnected, sendContractCall, refresh } = useWallet()
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState('')
   const [stage, setStage] = useState<Stage>('idle')
@@ -42,11 +41,11 @@ export function SendNativeForm({ safeAddress, safeBalance, threshold, onSubmitte
   const amountRaw = parseInt(parseOctAmount(amount || '0'), 10)
   const recipientValid = isValidOctraAddress(recipient)
   const amountValid = amountRaw > 0 && amountRaw <= safeBalance
-  const canSubmit = recipientValid && amountValid && !!address && stage === 'idle'
+  const canSubmit = recipientValid && amountValid && !!address && isConnected && stage === 'idle'
 
   const handleSubmit = async () => {
-    if (!address || nonce === null) {
-      toast.error('Wallet not ready')
+    if (!address || !isConnected) {
+      toast.error('Wallet not connected')
       return
     }
     setStage('confirming')
@@ -57,7 +56,6 @@ export function SendNativeForm({ safeAddress, safeBalance, threshold, onSubmitte
       const safeTx = encodeSafeNativeTransferTx(recipient, amountRaw)
 
       // Verify the caller is a Safe owner
-      setStage('confirming')
       const isOwner = await contractCall<string | boolean>(
         network.rpcUrl,
         safeAddress,
@@ -70,25 +68,15 @@ export function SendNativeForm({ safeAddress, safeBalance, threshold, onSubmitte
         throw new Error('You are not an owner of this Safe')
       }
 
-      // Build the contract call: safe.submit_transaction(to, value, data)
+      // Submit via 0xio wallet — extension handles nonce, signing, broadcasting
       setStage('signing')
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName: SAFE_FUNCTIONS.submitTransaction,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: SAFE_FUNCTIONS.submitTransaction,
         args: [safeTx.to, safeTx.value, safeTx.data],
-        nonce: nextNonce,
         ou: '1000',
       })
-
-      setStage('submitting')
-      const result = await sendAndWaitTx(tx)
-      setTxHash(result.tx_hash)
-      setStage('waiting')
-
-      // Wait for contract receipt
-      // The view will update via the parent's polling
+      setTxHash(result.hash ?? result.txHash ?? '')
 
       setStage('done')
       toast.success('Transaction submitted to Safe', {

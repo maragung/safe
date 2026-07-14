@@ -10,12 +10,9 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { useWallet } from '@/hooks/useWallet'
-import { useNetwork } from '@/stores/useAppStore'
-import { contractCall } from '@/lib/rpc'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx } from '@/lib/encoder'
 import { encodeSafeAddOwnerTx } from '@/lib/ocs01'
-import { isValidOctraAddress } from '@/lib/signer'
+import { isValidOctraAddress } from '@/lib/zerozio'
 
 export interface AddOwnerProps {
   safeAddress: string
@@ -24,17 +21,16 @@ export interface AddOwnerProps {
 }
 
 export function AddOwner({ safeAddress, currentOwnerCount, onSubmitted }: AddOwnerProps) {
-  const network = useNetwork()
-  const { address, nonce, sendAndWaitTx } = useWallet()
+  const { address, isConnected, sendContractCall } = useWallet()
   const [newOwner, setNewOwner] = useState('')
   const [loading, setLoading] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
   const valid = isValidOctraAddress(newOwner)
-  const canSubmit = valid && !!address
+  const canSubmit = valid && !!address && isConnected
 
   const handleSubmit = async () => {
-    if (!address || nonce === null) {
+    if (!address || !isConnected) {
       toast.error('Wallet not connected')
       return
     }
@@ -42,22 +38,20 @@ export function AddOwner({ safeAddress, currentOwnerCount, onSubmitted }: AddOwn
     setShowConfirm(false)
     try {
       const safeTx = encodeSafeAddOwnerTx(newOwner)
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName: SAFE_FUNCTIONS.submitTransaction,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: SAFE_FUNCTIONS.submitTransaction,
         args: [safeTx.to, safeTx.value, safeTx.data],
-        nonce: nextNonce,
         ou: '1000',
       })
-      const result = await sendAndWaitTx(tx)
-      if (result.status === 'confirmed') {
+      if (result.success || result.status === 'confirmed') {
         toast.success('Add-owner transaction submitted', {
           description: 'Other owners must confirm and execute it.',
         })
         setNewOwner('')
         onSubmitted?.()
+      } else {
+        toast.error('Submit failed', { description: `tx ${result.status ?? 'failed'}` })
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Submit failed'

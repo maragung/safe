@@ -1,29 +1,21 @@
 // ============================================================================
 // stores/useAppStore.ts — Global app state via zustand
 // ----------------------------------------------------------------------------
-// Holds wallet state (in-memory keys after unlock), current network, custom
-// tokens, and locally-known Safe addresses (cached for fast dashboard load).
+// Wallet state is now sourced from the 0xio SDK via useWallet hook (NOT here).
+// This store only holds: network selection, custom tokens, and locally-cached
+// Safe addresses (for fast dashboard load).
 // ============================================================================
 
 import { create } from 'zustand'
-import type { NetworkId, WalletState, TokenInfo } from '@/types'
+import type { NetworkId, TokenInfo } from '@/types'
 import { NETWORKS, DEFAULT_NETWORK } from '@/config/networks'
 import { getKnownTokens } from '@/config/contracts'
 import { STORAGE_KEYS } from '@/config/networks'
 
 interface AppState {
-  // Network
+  // Network (local-only state — actual wallet network is in 0xio extension)
   networkId: NetworkId
   setNetworkId: (id: NetworkId) => void
-
-  // Wallet
-  wallet: WalletState
-  // In-memory secret key (only set after unlock). NOT persisted.
-  secretKey: Uint8Array | null
-  publicKey: Uint8Array | null
-  setWallet: (w: Partial<WalletState>) => void
-  setKeys: (sk: Uint8Array | null, pk: Uint8Array | null) => void
-  resetWallet: () => void
 
   // Tokens (known + custom user-added)
   tokens: TokenInfo[]
@@ -98,7 +90,6 @@ function getCurrentNetworkId(): NetworkId {
 function getInitialTokens(networkId: NetworkId): TokenInfo[] {
   const known = getKnownTokens(networkId)
   const custom = loadCustomTokens(networkId)
-  // Merge: known tokens first, then custom (deduped by address)
   const seen = new Set(known.map((t) => t.address))
   const merged = [...known]
   for (const t of custom) {
@@ -117,7 +108,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setNetworkId: (id) => {
     localStorage.setItem(STORAGE_KEYS.network, id)
     const tokens = getInitialTokens(id)
-    // Reload knownSafes scoped to the new network
     const allSafesRaw = localStorage.getItem(STORAGE_KEYS.safes)
     let newSafes: string[] = []
     if (allSafesRaw) {
@@ -130,36 +120,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ networkId: id, tokens, knownSafes: newSafes })
   },
-
-  wallet: {
-    address: null,
-    publicKey: null,
-    privateKey: null,
-    mnemonic: null,
-    isUnlocked: false,
-    balance: null,
-    balanceRaw: null,
-    nonce: null,
-  },
-  secretKey: null,
-  publicKey: null,
-  setWallet: (w) => set((s) => ({ wallet: { ...s.wallet, ...w } })),
-  setKeys: (sk, pk) => set({ secretKey: sk, publicKey: pk }),
-  resetWallet: () =>
-    set({
-      wallet: {
-        address: null,
-        publicKey: null,
-        privateKey: null,
-        mnemonic: null,
-        isUnlocked: false,
-        balance: null,
-        balanceRaw: null,
-        nonce: null,
-      },
-      secretKey: null,
-      publicKey: null,
-    }),
 
   tokens: getInitialTokens(initialNetworkId),
   addToken: (t) => {
@@ -204,3 +164,4 @@ export function useNetwork() {
   const networkId = useAppStore((s) => s.networkId)
   return NETWORKS[networkId]
 }
+

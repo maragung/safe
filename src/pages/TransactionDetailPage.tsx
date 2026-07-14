@@ -16,17 +16,13 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { TransactionDetail } from '@/components/transaction/TransactionDetail'
 import { useSafe } from '@/hooks/useSafe'
 import { useWallet } from '@/hooks/useWallet'
-import { useNetwork } from '@/stores/useAppStore'
-import { contractCall } from '@/lib/rpc'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx } from '@/lib/encoder'
 import type { SafeTransaction } from '@/types'
 
 export function TransactionDetailPage() {
   const { safeAddress, txId } = useParams<{ safeAddress: string; txId: string }>()
   const navigate = useNavigate()
-  const network = useNetwork()
-  const { address, nonce, sendAndWaitTx } = useWallet()
+  const { address, isConnected, sendContractCall } = useWallet()
   const { safeInfo, transactions, loading, load, refreshTx } = useSafe(safeAddress)
 
   const txIdNum = txId ? parseInt(txId, 10) : NaN
@@ -38,27 +34,22 @@ export function TransactionDetailPage() {
   const canExecute = !!tx && !tx.executed && userIsOwner && tx.confirmationCount >= tx.threshold
   const canRevoke = !!tx && !tx.executed && userIsOwner && userHasConfirmed
 
-  // Submit a contract call to the Safe
-  const callSafe = async (methodName: string, args: unknown[], successMsg: string, errorMsg: string) => {
-    if (!address || nonce === null || !safeAddress) return
+  // Submit a contract call to the Safe via 0xio wallet
+  const callSafe = async (methodName: string, args: Array<string | number | boolean>, successMsg: string, errorMsg: string) => {
+    if (!address || !isConnected || !safeAddress) return
     try {
-      const nextNonce = (nonce ?? 0) + 1
-      const txObj = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: methodName,
         args,
-        nonce: nextNonce,
         ou: '1000',
       })
-      const result = await sendAndWaitTx(txObj)
-      if (result.status === 'confirmed') {
+      if (result.success || result.status === 'confirmed') {
         toast.success(successMsg)
-        // Refresh the specific tx + the full safe state
         refreshTx(txIdNum).catch(() => {})
         load()
       } else {
-        toast.error(`${errorMsg}: tx ${result.status}`)
+        toast.error(`${errorMsg}: tx ${result.status ?? 'failed'}`)
       }
     } catch (e) {
       toast.error(errorMsg, { description: e instanceof Error ? e.message : '' })

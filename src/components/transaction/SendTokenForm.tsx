@@ -16,9 +16,9 @@ import { useNetwork } from '@/stores/useAppStore'
 import { useAppStore } from '@/stores/useAppStore'
 import { contractCall } from '@/lib/rpc'
 import { SAFE_FUNCTIONS, OCS01_FUNCTIONS } from '@/types'
-import { buildContractCallTx, decodeInt } from '@/lib/encoder'
+import { decodeInt } from '@/lib/encoder'
 import { encodeSafeTokenTransferTx, parseTokenAmount, formatTokenAmount, getTokenBalance } from '@/lib/ocs01'
-import { isValidOctraAddress } from '@/lib/signer'
+import { isValidOctraAddress } from '@/lib/zerozio'
 
 export interface SendTokenFormProps {
   safeAddress: string
@@ -32,7 +32,7 @@ type Stage = 'idle' | 'confirming' | 'signing' | 'submitting' | 'waiting' | 'don
 export function SendTokenForm({ safeAddress, threshold, onSubmitted, onCancel }: SendTokenFormProps) {
   const network = useNetwork()
   const tokens = useAppStore((s) => s.tokens)
-  const { address, nonce, sendAndWaitTx, refresh } = useWallet()
+  const { address, isConnected, sendContractCall, refresh } = useWallet()
   const [selectedTokenAddr, setSelectedTokenAddr] = useState<string>('')
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState('')
@@ -70,11 +70,11 @@ export function SendTokenForm({ safeAddress, threshold, onSubmitted, onCancel }:
   const amountRaw = selectedToken ? parseTokenAmount(amount || '0', selectedToken.decimals) : 0
   const recipientValid = isValidOctraAddress(recipient)
   const amountValid = amountRaw > 0 && amountRaw <= tokenBalance
-  const canSubmit = !!selectedToken && recipientValid && amountValid && !!address && stage === 'idle'
+  const canSubmit = !!selectedToken && recipientValid && amountValid && !!address && isConnected && stage === 'idle'
 
   const handleSubmit = async () => {
-    if (!address || nonce === null || !selectedToken) {
-      toast.error('Wallet not ready')
+    if (!address || !isConnected || !selectedToken) {
+      toast.error('Wallet not connected')
       return
     }
     setStage('confirming')
@@ -93,21 +93,15 @@ export function SendTokenForm({ safeAddress, threshold, onSubmitted, onCancel }:
       // Build Safe tx payload (token transfer)
       const safeTx = encodeSafeTokenTransferTx(selectedTokenAddr, recipient, amountRaw)
 
-      // Build & sign the contract call: safe.submit_transaction(to, value, data)
+      // Submit via 0xio wallet
       setStage('signing')
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName: SAFE_FUNCTIONS.submitTransaction,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: SAFE_FUNCTIONS.submitTransaction,
         args: [safeTx.to, safeTx.value, safeTx.data],
-        nonce: nextNonce,
         ou: '1000',
       })
-
-      setStage('submitting')
-      const result = await sendAndWaitTx(tx)
-      setTxHash(result.tx_hash)
+      setTxHash(result.hash ?? result.txHash ?? '')
       setStage('done')
 
       toast.success('Token transfer submitted to Safe', {

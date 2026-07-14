@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAppStore, useNetwork } from '@/stores/useAppStore'
 import { fetchTokenMetadata } from '@/lib/ocs01'
-import { isValidOctraAddress } from '@/lib/signer'
+import { isValidOctraAddress } from '@/lib/zerozio'
 import type { TokenInfo } from '@/types'
 
 export function AddTokenModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {

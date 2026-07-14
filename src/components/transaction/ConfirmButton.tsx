@@ -3,15 +3,11 @@
 // ============================================================================
 
 import { useState } from 'react'
-import { Check, ArrowRight, Loader2 } from 'lucide-react'
+import { Check, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, type ButtonProps } from '@/components/ui/Button'
 import { useWallet } from '@/hooks/useWallet'
-import { useNetwork } from '@/stores/useAppStore'
-import { contractCall } from '@/lib/rpc'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx } from '@/lib/encoder'
-import { classNames } from '@/utils/helpers'
 
 type Action = 'confirm' | 'execute'
 
@@ -36,37 +32,32 @@ export function ConfirmButton({
   className,
   label,
 }: ConfirmButtonProps) {
-  const network = useNetwork()
-  const { address, nonce, sendAndWaitTx } = useWallet()
+  const { address, isConnected, sendContractCall } = useWallet()
   const [loading, setLoading] = useState(false)
 
   const handleClick = async () => {
-    if (!address || nonce === null) {
+    if (!address || !isConnected) {
       toast.error('Wallet not connected')
       return
     }
     setLoading(true)
     try {
       const methodName = action === 'confirm' ? SAFE_FUNCTIONS.confirmTransaction : SAFE_FUNCTIONS.executeTransaction
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: methodName,
         args: [txId],
-        nonce: nextNonce,
         ou: '1000',
       })
 
-      const result = await sendAndWaitTx(tx)
-
-      if (result.status === 'confirmed') {
+      const txHash = result.hash ?? result.txHash ?? ''
+      if (result.success || result.status === 'confirmed') {
         toast.success(action === 'confirm' ? 'Transaction confirmed' : 'Transaction executed', {
-          description: `Tx ${txHash_short(result.tx_hash)}`,
+          description: txHash ? `Tx ${txHash_short(txHash)}` : undefined,
         })
         onDone?.()
       } else {
-        toast.error(`Transaction ${result.status}`, { description: result.tx_hash })
+        toast.error(`Transaction ${result.status ?? 'failed'}`, { description: txHash })
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Action failed'

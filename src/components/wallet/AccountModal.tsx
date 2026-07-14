@@ -1,314 +1,134 @@
 // ============================================================================
-// components/wallet/AccountModal.tsx — Wallet create / import / unlock modal
+// components/wallet/AccountModal.tsx — 0xio wallet connect / install modal
+// ----------------------------------------------------------------------------
+// Shows one of three states:
+//   1. Extension not detected → install prompt with link to Chrome Web Store
+//   2. Extension detected, not connected → connect button (calls 0xio SDK)
+//   3. Loading — connecting
 // ============================================================================
 
 import { useState } from 'react'
-import { Wallet, Plus, Download, Key, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Loader2, Wallet, Download, ExternalLink, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
-import { Input, Textarea } from '@/components/ui/Input'
 import { useWallet } from '@/hooks/useWallet'
-import { loadEncryptedWallet } from '@/lib/signer'
-import { classNames } from '@/utils/helpers'
-
-type Tab = 'unlock' | 'create' | 'import-mnemonic' | 'import-key'
+import { is0xioExtensionInstalled, ZEROXIO_INSTALL_URL, ZEROXIO_DOCS_URL } from '@/lib/zerozio'
 
 export function AccountModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { createWallet, importFromMnemonic, importFromPrivateKey, unlock, isLoading } = useWallet()
-  const [hasWallet] = useState(() => !!loadEncryptedWallet())
-  const [tab, setTab] = useState<Tab>(hasWallet ? 'unlock' : 'create')
+  const { connect, isConnecting } = useWallet()
+  const [installed] = useState(() => is0xioExtensionInstalled())
 
-  // Form state
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [mnemonic, setMnemonic] = useState('')
-  const [privateKey, setPrivateKey] = useState('')
-  const [showMnemonic, setShowMnemonic] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [createdMnemonic, setCreatedMnemonic] = useState<string | null>(null)
-
-  const reset = () => {
-    setPassword('')
-    setConfirmPassword('')
-    setMnemonic('')
-    setPrivateKey('')
-    setError(null)
-    setCreatedMnemonic(null)
-  }
-
-  const handleClose = () => {
-    reset()
+  const handleConnect = async () => {
+    await connect()
     onClose()
   }
 
-  const handleCreate = async () => {
-    setError(null)
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-    try {
-      const { mnemonic: newMnemonic } = await createWallet(password)
-      setCreatedMnemonic(newMnemonic)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create wallet')
-    }
-  }
-
-  const handleImportMnemonic = async () => {
-    setError(null)
-    const trimmed = mnemonic.trim()
-    const words = trimmed.split(/\s+/)
-    if (words.length !== 12 && words.length !== 24) {
-      setError(`Mnemonic must be 12 or 24 words (got ${words.length})`)
-      return
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
-    try {
-      await importFromMnemonic(trimmed, password)
-      handleClose()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to import')
-    }
-  }
-
-  const handleImportKey = async () => {
-    setError(null)
-    if (!privateKey.trim()) {
-      setError('Private key is required')
-      return
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
-    try {
-      await importFromPrivateKey(privateKey, password)
-      handleClose()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to import')
-    }
-  }
-
-  const handleUnlock = async () => {
-    setError(null)
-    if (!password) {
-      setError('Password is required')
-      return
-    }
-    try {
-      await unlock(password)
-      handleClose()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to unlock')
-    }
-  }
-
-  // Show mnemonic after creation
-  if (createdMnemonic) {
-    return (
-      <Modal isOpen={isOpen} onClose={handleClose} title="Wallet Created" size="md">
-        <div className="space-y-4">
-          <div className="p-3 rounded-xl bg-status-pending/10 border border-status-pending/30 flex gap-2">
-            <AlertCircle className="h-5 w-5 text-status-pending shrink-0" />
-            <div className="text-xs text-status-pending">
-              <p className="font-semibold">Save your recovery phrase</p>
-              <p className="mt-1">This is the ONLY time you will see this mnemonic. Write it down and store it safely. Without it, you cannot recover your wallet.</p>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-bg-subtle border border-border">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-text-secondary">Recovery Phrase (12 words)</span>
-              <button
-                onClick={() => setShowMnemonic(!showMnemonic)}
-                className="p-1 rounded hover:bg-bg-hover text-text-muted"
-              >
-                {showMnemonic ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-              </button>
-            </div>
-            <p className="font-mono text-sm text-text-primary leading-relaxed break-all">
-              {showMnemonic ? createdMnemonic : '•••• •••• •••• •••• •••• •••• •••• •••• •••• •••• •••• ••••'}
-            </p>
-          </div>
-
-          <Button onClick={handleClose} className="w-full">
-            I've saved my recovery phrase
-          </Button>
-        </div>
-      </Modal>
-    )
-  }
-
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Connect Wallet" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Connect Wallet" size="md">
       <div className="space-y-4">
-        {/* Tab selector */}
-        <div className="flex gap-1 p-1 bg-bg-subtle rounded-lg">
-          {hasWallet && (
-            <button
-              onClick={() => { setTab('unlock'); setError(null) }}
-              className={classNames(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-colors',
-                tab === 'unlock' ? 'bg-bg-card text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-              )}
-            >
-              <Wallet className="h-3 w-3" /> Unlock
-            </button>
-          )}
-          <button
-            onClick={() => { setTab('create'); setError(null) }}
-            className={classNames(
-              'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-colors',
-              tab === 'create' ? 'bg-bg-card text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-            )}
-          >
-            <Plus className="h-3 w-3" /> New
-          </button>
-          <button
-            onClick={() => { setTab('import-mnemonic'); setError(null) }}
-            className={classNames(
-              'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-colors',
-              tab === 'import-mnemonic' ? 'bg-bg-card text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-            )}
-          >
-            <Download className="h-3 w-3" /> Mnemonic
-          </button>
-          <button
-            onClick={() => { setTab('import-key'); setError(null) }}
-            className={classNames(
-              'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-colors',
-              tab === 'import-key' ? 'bg-bg-card text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-            )}
-          >
-            <Key className="h-3 w-3" /> Key
-          </button>
+        {/* 0xio branding */}
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-br from-accent-blue/10 to-accent-cyan/5 border border-accent-blue/20">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue to-accent-cyan">
+            <Wallet className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-text-primary">0xio Wallet</h3>
+            <p className="text-xs text-text-secondary">The Octra wallet for the web</p>
+          </div>
         </div>
 
-        {/* Unlock existing */}
-        {tab === 'unlock' && (
-          <div className="space-y-3">
-            <p className="text-xs text-text-secondary">
-              Enter your password to unlock your wallet.
-            </p>
-            <Input
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Enter password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              rightAdornment={
-                <button onClick={() => setShowPassword(!showPassword)} className="text-text-muted hover:text-text-primary">
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              }
-              onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
-            />
-            {error && <p className="text-xs text-status-failed">{error}</p>}
-            <Button onClick={handleUnlock} isLoading={isLoading} className="w-full">
-              Unlock Wallet
-            </Button>
-          </div>
-        )}
+        {!installed ? (
+          // State 1: Extension not detected — show install prompt
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-status-pending/10 border border-status-pending/30">
+              <AlertCircle className="h-5 w-5 text-status-pending shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-status-pending">0xio wallet extension not detected</p>
+                <p className="text-xs text-status-pending/80 mt-1">
+                  Install the 0xio browser extension to connect your Octra wallet. Available for Chrome, Brave, Edge, and Firefox.
+                </p>
+              </div>
+            </div>
 
-        {/* Create new */}
-        {tab === 'create' && (
-          <div className="space-y-3">
-            <div className="p-3 rounded-xl bg-accent-blue/5 border border-accent-blue/20">
-              <p className="text-xs text-text-secondary">
-                A new ed25519 keypair will be generated. Your private key will be encrypted with your password and stored locally in this browser only — it never leaves your device.
+            <div className="space-y-2 text-xs text-text-secondary">
+              <p className="font-medium text-text-primary">Why 0xio?</p>
+              <ul className="space-y-1 ml-4 list-disc">
+                <li>Non-custodial — your keys never leave the extension</li>
+                <li>Octra-native (mainnet + devnet support)</li>
+                <li>Encrypted balance support (pOCT / stealth transfers)</li>
+                <li>Audited SDK with open-source code on GitHub</li>
+              </ul>
+            </div>
+
+            <a href={ZEROXIO_INSTALL_URL} target="_blank" rel="noopener noreferrer">
+              <Button className="w-full" size="lg">
+                <Download className="h-4 w-4" />
+                Install 0xio Wallet
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </a>
+
+            <Button variant="outline" className="w-full" onClick={handleConnect} isLoading={isConnecting}>
+              <CheckCircle2 className="h-4 w-4" />
+              I've installed it — refresh & connect
+            </Button>
+
+            <a
+              href={ZEROXIO_DOCS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-center text-xs text-text-muted hover:text-text-primary"
+            >
+              Read the 0xio docs →
+            </a>
+          </div>
+        ) : (
+          // State 2: Extension detected — show connect button
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-status-success/10 border border-status-success/30">
+              <CheckCircle2 className="h-5 w-5 text-status-success shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-status-success">0xio wallet detected</p>
+                <p className="text-xs text-status-success/80 mt-1">
+                  Click connect and approve the request in the 0xio extension popup.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs text-text-secondary">
+              <p className="font-medium text-text-primary">This dApp will request:</p>
+              <ul className="space-y-1 ml-4 list-disc">
+                <li>Read your wallet address & balance</li>
+                <li>Submit transactions (you approve each one)</li>
+                <li>Sign messages (you approve each one)</li>
+              </ul>
+              <p className="text-text-muted mt-2">
+                Your private key never leaves the extension.
               </p>
             </div>
-            <Input
-              label="Password (min 8 chars)"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Create password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              rightAdornment={
-                <button onClick={() => setShowPassword(!showPassword)} className="text-text-muted hover:text-text-primary">
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              }
-            />
-            <Input
-              label="Confirm password"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Confirm password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            />
-            {error && <p className="text-xs text-status-failed">{error}</p>}
-            <Button onClick={handleCreate} isLoading={isLoading} className="w-full">
-              Create Wallet
-            </Button>
-          </div>
-        )}
 
-        {/* Import from mnemonic */}
-        {tab === 'import-mnemonic' && (
-          <div className="space-y-3">
-            <Textarea
-              label="Recovery Phrase (12 or 24 words)"
-              placeholder="word1 word2 word3..."
-              value={mnemonic}
-              onChange={(e) => setMnemonic(e.target.value)}
-              className="min-h-[80px]"
-            />
-            <Input
-              label="New password (min 8 chars)"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Create password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              rightAdornment={
-                <button onClick={() => setShowPassword(!showPassword)} className="text-text-muted hover:text-text-primary">
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              }
-            />
-            {error && <p className="text-xs text-status-failed">{error}</p>}
-            <Button onClick={handleImportMnemonic} isLoading={isLoading} className="w-full">
-              Import Wallet
+            <Button className="w-full" size="lg" onClick={handleConnect} isLoading={isConnecting}>
+              {isConnecting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Waiting for approval...
+                </>
+              ) : (
+                <>
+                  <Wallet className="h-4 w-4" />
+                  Connect 0xio Wallet
+                </>
+              )}
             </Button>
-          </div>
-        )}
 
-        {/* Import from private key */}
-        {tab === 'import-key' && (
-          <div className="space-y-3">
-            <Input
-              label="Private Key (base64)"
-              placeholder="base64-encoded ed25519 secret key"
-              value={privateKey}
-              onChange={(e) => setPrivateKey(e.target.value)}
-              className="font-mono text-xs"
-            />
-            <Input
-              label="New password (min 8 chars)"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Create password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              rightAdornment={
-                <button onClick={() => setShowPassword(!showPassword)} className="text-text-muted hover:text-text-primary">
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              }
-            />
-            {error && <p className="text-xs text-status-failed">{error}</p>}
-            <Button onClick={handleImportKey} isLoading={isLoading} className="w-full">
-              Import Wallet
-            </Button>
+            <a
+              href={ZEROXIO_DOCS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-center text-xs text-text-muted hover:text-text-primary"
+            >
+              Learn more about 0xio →
+            </a>
           </div>
         )}
       </div>

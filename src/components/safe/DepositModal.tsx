@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/Button'
 import { AmountInput } from '@/components/ui/AmountInput'
 import { useWallet } from '@/hooks/useWallet'
 import { useNetwork } from '@/stores/useAppStore'
-import { buildNativeTransferTx } from '@/lib/encoder'
 import { parseOctAmount, formatOctAmount } from '@/lib/ocs01'
 import { truncateAddress } from '@/utils/helpers'
 
@@ -28,37 +27,31 @@ type Stage = 'idle' | 'signing' | 'submitting' | 'waiting' | 'done' | 'error'
 
 export function DepositModal({ isOpen, onClose, safeAddress, onDeposited }: DepositModalProps) {
   const network = useNetwork()
-  const { address, balance, nonce, sendAndWaitTx } = useWallet()
+  const { address, isConnected, balance, sendTx } = useWallet()
   const [amount, setAmount] = useState('')
   const [stage, setStage] = useState<Stage>('idle')
   const [txHash, setTxHash] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const balanceRaw = balance !== null ? balance * 1_000_000 : 0  // OCT → OU
+  const balanceRaw = balance ? balance.public * 1_000_000 : 0  // OCT → OU
   const amountRaw = parseInt(parseOctAmount(amount || '0'), 10)
   const amountValid = amountRaw > 0 && amountRaw <= balanceRaw
-  const canSubmit = amountValid && !!address && stage === 'idle'
+  const canSubmit = amountValid && !!address && isConnected && stage === 'idle'
 
   const handleSubmit = async () => {
-    if (!address || nonce === null) {
+    if (!address || !isConnected) {
       toast.error('Wallet not connected')
       return
     }
     setError(null)
     setStage('signing')
     try {
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildNativeTransferTx({
-        from: address,
+      // Send via 0xio wallet — extension handles nonce, signing, broadcasting
+      const result = await sendTx({
         to: safeAddress,
-        amount: String(amountRaw),
-        nonce: nextNonce,
-        ou: '10000',  // ~0.01 OCT cap for standard transfer
+        amount: amountRaw / 1_000_000,  // OU → OCT (number)
       })
-
-      setStage('submitting')
-      const result = await sendAndWaitTx(tx)
-      setTxHash(result.tx_hash)
+      setTxHash(result.hash ?? result.txHash ?? '')
       setStage('done')
       toast.success('Deposit successful', {
         description: `${formatOctAmount(String(amountRaw))} OCT sent to Safe`,
@@ -120,7 +113,7 @@ export function DepositModal({ isOpen, onClose, safeAddress, onDeposited }: Depo
               <div className="flex justify-between text-xs">
                 <span className="text-text-muted">Wallet balance</span>
                 <span className="font-mono text-text-primary">
-                  {balance !== null ? balance.toFixed(4) : '—'} OCT
+                  {balance ? balance.public.toFixed(4) : '—'} OCT
                 </span>
               </div>
             </div>

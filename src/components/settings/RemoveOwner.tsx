@@ -10,9 +10,8 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useWallet } from '@/hooks/useWallet'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx } from '@/lib/encoder'
 import { encodeSafeRemoveOwnerTx } from '@/lib/ocs01'
-import { isValidOctraAddress } from '@/lib/signer'
+import { isValidOctraAddress } from '@/lib/zerozio'
 
 export interface RemoveOwnerProps {
   safeAddress: string
@@ -21,35 +20,33 @@ export interface RemoveOwnerProps {
 }
 
 export function RemoveOwner({ safeAddress, owners, onSubmitted }: RemoveOwnerProps) {
-  const { address, nonce, sendAndWaitTx } = useWallet()
+  const { address, isConnected, sendContractCall } = useWallet()
   const [selectedOwner, setSelectedOwner] = useState('')
   const [loading, setLoading] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
   const canRemove = owners.length > 1
   const valid = isValidOctraAddress(selectedOwner)
-  const canSubmit = valid && canRemove && !!address
+  const canSubmit = valid && canRemove && !!address && isConnected
 
   const handleSubmit = async () => {
-    if (!address || nonce === null) return
+    if (!address || !isConnected) return
     setLoading(true)
     setShowConfirm(false)
     try {
       const safeTx = encodeSafeRemoveOwnerTx(selectedOwner)
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName: SAFE_FUNCTIONS.submitTransaction,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: SAFE_FUNCTIONS.submitTransaction,
         args: [safeTx.to, safeTx.value, safeTx.data],
-        nonce: nextNonce,
         ou: '1000',
       })
-      const result = await sendAndWaitTx(tx)
-      if (result.status === 'confirmed') {
+      if (result.success || result.status === 'confirmed') {
         toast.success('Remove-owner transaction submitted')
         setSelectedOwner('')
         onSubmitted?.()
+      } else {
+        toast.error('Submit failed', { description: `tx ${result.status ?? 'failed'}` })
       }
     } catch (e) {
       toast.error('Failed to submit', { description: e instanceof Error ? e.message : 'Unknown error' })

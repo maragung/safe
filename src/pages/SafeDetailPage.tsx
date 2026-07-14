@@ -23,7 +23,6 @@ import { useWallet } from '@/hooks/useWallet'
 import { useAppStore } from '@/stores/useAppStore'
 import { toast } from 'sonner'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx } from '@/lib/encoder'
 import type { SafeTransaction } from '@/types'
 
 type Tab = 'transactions' | 'settings'
@@ -31,7 +30,7 @@ type Tab = 'transactions' | 'settings'
 export function SafeDetailPage() {
   const { safeAddress } = useParams<{ safeAddress: string }>()
   const navigate = useNavigate()
-  const { address, nonce, sendAndWaitTx } = useWallet()
+  const { address, isConnected, sendContractCall } = useWallet()
   const safe = useSafe(safeAddress)
   const { safeInfo, transactions, loading, load } = safe
   const { pending, executed, readyToExecute, error } = useSafeTransactions(safe)
@@ -48,24 +47,23 @@ export function SafeDetailPage() {
   const userIsOwner = address ? safeInfo?.owners.includes(address) ?? false : false
   const userHasConfirmed = (tx: SafeTransaction) => !!address && tx.confirmations.includes(address)
 
-  const callSafe = async (methodName: string, args: unknown[], successMsg: string, errorMsg: string) => {
-    if (!address || nonce === null || !safeAddress) return
+  // Call a state-changing method on the Safe contract via the 0xio wallet.
+  // The extension handles nonce, signing, and submission.
+  const callSafe = async (methodName: string, args: Array<string | number | boolean>, successMsg: string, errorMsg: string) => {
+    if (!address || !isConnected || !safeAddress) return
     try {
-      const nextNonce = (nonce ?? 0) + 1
-      const txObj = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: methodName,
         args,
-        nonce: nextNonce,
         ou: '1000',
       })
-      const result = await sendAndWaitTx(txObj)
-      if (result.status === 'confirmed') {
+      // 0xio SDK returns { txHash, success, status, ... }
+      if (result.success || result.status === 'confirmed') {
         toast.success(successMsg)
         load()
       } else {
-        toast.error(`${errorMsg}: tx ${result.status}`)
+        toast.error(`${errorMsg}: tx ${result.status ?? 'failed'}`)
       }
     } catch (e) {
       toast.error(errorMsg, { description: e instanceof Error ? e.message : '' })

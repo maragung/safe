@@ -11,17 +11,17 @@ import { useState } from 'react'
 import { AccountModal } from '@/components/wallet/AccountModal'
 
 export function CreateSafePage() {
-  const { isUnlocked, address } = useWallet()
+  const { isConnected, address } = useWallet()
   const [showWalletModal, setShowWalletModal] = useState(false)
 
-  if (!isUnlocked || !address) {
+  if (!isConnected || !address) {
     return (
       <div className="max-w-2xl mx-auto pt-8">
         <EmptyState
           icon={<WalletIcon className="h-8 w-8" />}
-          title="Connect your wallet first"
-          description="You need an Octra wallet to deploy a Safe. Create or import one to continue."
-          action={<Button onClick={() => setShowWalletModal(true)}>Connect Wallet</Button>}
+          title="Connect 0xio wallet first"
+          description="You need the 0xio wallet extension connected to deploy a Safe. Install or connect your 0xio wallet to continue."
+          action={<Button onClick={() => setShowWalletModal(true)}>Connect 0xio Wallet</Button>}
         />
         <AccountModal isOpen={showWalletModal} onClose={() => setShowWalletModal(false)} />
       </div>

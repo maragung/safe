@@ -18,9 +18,9 @@ import { useWallet } from '@/hooks/useWallet'
 import { useNetwork } from '@/stores/useAppStore'
 import { contractCall } from '@/lib/rpc'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx, decodeInt } from '@/lib/encoder'
+import { decodeInt } from '@/lib/encoder'
 import { encodeSafeTokenGrantTx, parseTokenAmount, formatTokenAmount, getTokenBalance } from '@/lib/ocs01'
-import { isValidOctraAddress } from '@/lib/signer'
+import { isValidOctraAddress } from '@/lib/zerozio'
 
 export interface GrantTokenFormProps {
   safeAddress: string
@@ -33,7 +33,7 @@ type Stage = 'idle' | 'confirming' | 'signing' | 'submitting' | 'waiting' | 'don
 export function GrantTokenForm({ safeAddress, onSubmitted, onCancel }: GrantTokenFormProps) {
   const network = useNetwork()
   const tokens = useAppStoreShallow()
-  const { address, nonce, sendAndWaitTx, refresh } = useWallet()
+  const { address, isConnected, sendContractCall, refresh } = useWallet()
   const [selectedTokenAddr, setSelectedTokenAddr] = useState('')
   const [spender, setSpender] = useState('')
   const [amount, setAmount] = useState('')
@@ -70,11 +70,11 @@ export function GrantTokenForm({ safeAddress, onSubmitted, onCancel }: GrantToke
   const amountRaw = selectedToken ? parseTokenAmount(amount || '0', selectedToken.decimals) : 0
   const spenderValid = isValidOctraAddress(spender)
   const amountValid = amountRaw > 0 && amountRaw <= tokenBalance
-  const canSubmit = !!selectedToken && spenderValid && amountValid && !!address && stage === 'idle'
+  const canSubmit = !!selectedToken && spenderValid && amountValid && !!address && isConnected && stage === 'idle'
 
   const handleSubmit = async () => {
-    if (!address || nonce === null || !selectedToken) {
-      toast.error('Wallet not ready')
+    if (!address || !isConnected || !selectedToken) {
+      toast.error('Wallet not connected')
       return
     }
     setStage('confirming')
@@ -89,20 +89,15 @@ export function GrantTokenForm({ safeAddress, onSubmitted, onCancel }: GrantToke
 
       const safeTx = encodeSafeTokenGrantTx(selectedTokenAddr, spender, amountRaw)
 
+      // Submit via 0xio wallet
       setStage('signing')
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName: SAFE_FUNCTIONS.submitTransaction,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: SAFE_FUNCTIONS.submitTransaction,
         args: [safeTx.to, safeTx.value, safeTx.data],
-        nonce: nextNonce,
         ou: '1000',
       })
-
-      setStage('submitting')
-      const result = await sendAndWaitTx(tx)
-      setTxHash(result.tx_hash)
+      setTxHash(result.hash ?? result.txHash ?? '')
       setStage('done')
       toast.success('Token grant submitted to Safe', {
         description: `Approve ${formatTokenAmount(amountRaw, selectedToken.decimals)} ${selectedToken.symbol}`,

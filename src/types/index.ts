@@ -17,14 +17,11 @@ export interface NetworkConfig {
 }
 
 export interface WalletState {
+  // DEPRECATED — wallet state is now sourced from the 0xio SDK via useWallet.
+  // Kept as a stub for any code still importing the type.
   address: string | null
-  publicKey: string | null  // base64
-  privateKey: string | null // base64 (encrypted at rest, in-memory only)
-  mnemonic: string | null
-  isUnlocked: boolean
-  balance: number | null     // in OCT (formatted)
-  balanceRaw: string | null  // in OU (raw integer string)
-  nonce: number | null
+  isConnected: boolean
+  balance: number | null
 }
 
 export interface TokenInfo {

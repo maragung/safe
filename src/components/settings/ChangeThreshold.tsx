@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useWallet } from '@/hooks/useWallet'
 import { SAFE_FUNCTIONS } from '@/types'
-import { buildContractCallTx } from '@/lib/encoder'
 import { encodeSafeChangeThresholdTx } from '@/lib/ocs01'
 import { classNames } from '@/utils/helpers'
 
@@ -22,34 +21,32 @@ export interface ChangeThresholdProps {
 }
 
 export function ChangeThreshold({ safeAddress, currentThreshold, ownerCount, onSubmitted }: ChangeThresholdProps) {
-  const { address, nonce, sendAndWaitTx } = useWallet()
+  const { address, isConnected, sendContractCall } = useWallet()
   const [newThreshold, setNewThreshold] = useState(currentThreshold)
   const [loading, setLoading] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
   const valid = newThreshold >= 1 && newThreshold <= ownerCount
   const changed = newThreshold !== currentThreshold
-  const canSubmit = valid && changed && !!address
+  const canSubmit = valid && changed && !!address && isConnected
 
   const handleSubmit = async () => {
-    if (!address || nonce === null) return
+    if (!address || !isConnected) return
     setLoading(true)
     setShowConfirm(false)
     try {
       const safeTx = encodeSafeChangeThresholdTx(newThreshold)
-      const nextNonce = (nonce ?? 0) + 1
-      const tx = buildContractCallTx({
-        from: address,
-        contractAddress: safeAddress,
-        methodName: SAFE_FUNCTIONS.submitTransaction,
+      const result = await sendContractCall({
+        contract: safeAddress,
+        method: SAFE_FUNCTIONS.submitTransaction,
         args: [safeTx.to, safeTx.value, safeTx.data],
-        nonce: nextNonce,
         ou: '1000',
       })
-      const result = await sendAndWaitTx(tx)
-      if (result.status === 'confirmed') {
+      if (result.success || result.status === 'confirmed') {
         toast.success('Change-threshold transaction submitted')
         onSubmitted?.()
+      } else {
+        toast.error('Submit failed', { description: `tx ${result.status ?? 'failed'}` })
       }
     } catch (e) {
       toast.error('Failed to submit', { description: e instanceof Error ? e.message : 'Unknown error' })
